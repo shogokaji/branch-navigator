@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -79,8 +80,24 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		if strings.TrimSpace(message) != "" {
-			fmt.Fprintln(os.Stdout, message)
+		printIfNotEmpty(os.Stdout, message)
+	case actionMerge:
+		mergeResult, err := client.MergeBranch(ctx, result.Branch, git.MergeOptions{})
+		printIfNotEmpty(os.Stdout, mergeResult.Stdout)
+		stderrOutput := strings.TrimSpace(mergeResult.Stderr)
+		if err != nil {
+			if stderrOutput != "" {
+				fmt.Fprintln(os.Stderr, stderrOutput)
+				if !strings.Contains(err.Error(), stderrOutput) {
+					fmt.Fprintln(os.Stderr, err)
+				}
+			} else {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			os.Exit(1)
+		}
+		if stderrOutput != "" {
+			fmt.Fprintln(os.Stderr, stderrOutput)
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "%s action is not implemented yet\n", act)
@@ -107,5 +124,11 @@ func resolveAction(checkout, merge, deleteBranch bool) (action, error) {
 		return selected[0], nil
 	default:
 		return "", errors.New("only one of -c, -m, or -d may be specified")
+	}
+}
+
+func printIfNotEmpty(w io.Writer, message string) {
+	if trimmed := strings.TrimSpace(message); trimmed != "" {
+		fmt.Fprintln(w, trimmed)
 	}
 }

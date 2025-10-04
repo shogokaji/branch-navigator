@@ -79,7 +79,8 @@ func TestParseReflogSubjects(t *testing.T) {
 
 type scriptCall struct {
 	args   []string
-	output string
+	stdout string
+	stderr string
 	err    error
 }
 
@@ -98,7 +99,19 @@ func (r *scriptRunner) Run(ctx context.Context, args ...string) (string, error) 
 	if !reflect.DeepEqual(call.args, args) {
 		r.testingT.Fatalf("unexpected args at call %d: got %v, want %v", r.index, args, call.args)
 	}
-	return call.output, call.err
+	return call.stdout, call.err
+}
+
+func (r *scriptRunner) RunWithCombinedOutput(ctx context.Context, args ...string) (string, string, error) {
+	if r.index >= len(r.calls) {
+		r.testingT.Fatalf("unexpected git invocation: %v", args)
+	}
+	call := r.calls[r.index]
+	r.index++
+	if !reflect.DeepEqual(call.args, args) {
+		r.testingT.Fatalf("unexpected args at call %d: got %v, want %v", r.index, args, call.args)
+	}
+	return call.stdout, call.stderr, call.err
 }
 
 func (r *scriptRunner) Exhausted() bool {
@@ -121,8 +134,8 @@ func TestClientCheckoutBranch(t *testing.T) {
 		"success": {
 			branch: "feature/test",
 			calls: []scriptCall{
-				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, output: "main"},
-				{args: []string{"checkout", "feature/test"}, output: "Switched to branch 'feature/test'"},
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
+				{args: []string{"checkout", "feature/test"}, stdout: "Switched to branch 'feature/test'"},
 			},
 			wantOut:   "Switched to branch 'feature/test'",
 			wantCalls: 2,
@@ -130,7 +143,7 @@ func TestClientCheckoutBranch(t *testing.T) {
 		"already-on": {
 			branch: "feature/test",
 			calls: []scriptCall{
-				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, output: "feature/test"},
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "feature/test"},
 			},
 			wantOut:   "already on 'feature/test'",
 			wantCalls: 1,
@@ -138,7 +151,7 @@ func TestClientCheckoutBranch(t *testing.T) {
 		"failure": {
 			branch: "feature/test",
 			calls: []scriptCall{
-				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, output: "main"},
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
 				{args: []string{"checkout", "feature/test"}, err: gitErr},
 			},
 			wantErr:   gitErr,
@@ -175,6 +188,70 @@ func TestClientCheckoutBranch(t *testing.T) {
 
 			if runner.index != tc.wantCalls {
 				t.Fatalf("unexpected number of git calls: got %d, want %d", runner.index, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestClientMergeBranch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mergeErr := errors.New("merge failed")
+
+	cases := map[string]struct {
+		calls   []scriptCall
+		branch  string
+		stdout  string
+		stderr  string
+		wantErr error
+	}{
+		"success": {
+			branch: "feature/topic",
+			stdout: "Updating abc..def",
+			stderr: "",
+			calls: []scriptCall{
+				{args: []string{"merge", "feature/topic"}, stdout: "Updating abc..def"},
+			},
+		},
+		"conflict": {
+			branch:  "feature/topic",
+			stdout:  "Auto-merging file.go",
+			stderr:  "CONFLICT (content): Merge conflict in file.go",
+			wantErr: mergeErr,
+			calls: []scriptCall{
+				{args: []string{"merge", "feature/topic"}, stdout: "Auto-merging file.go", stderr: "CONFLICT (content): Merge conflict in file.go", err: mergeErr},
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		name := name
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := &scriptRunner{testingT: t, calls: tc.calls}
+			client := NewClient(runner)
+
+			result, err := client.MergeBranch(ctx, tc.branch, MergeOptions{})
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.Stdout != tc.stdout {
+				t.Fatalf("unexpected stdout: got %q, want %q", result.Stdout, tc.stdout)
+			}
+			if result.Stderr != tc.stderr {
+				t.Fatalf("unexpected stderr: got %q, want %q", result.Stderr, tc.stderr)
+			}
+
+			if !runner.Exhausted() {
+				t.Fatalf("not all git calls were consumed: %d of %d", runner.index, len(runner.calls))
 			}
 		})
 	}
