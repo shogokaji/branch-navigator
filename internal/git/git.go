@@ -14,6 +14,11 @@ type Runner interface {
 	Run(ctx context.Context, args ...string) (string, error)
 }
 
+// CombinedRunner exposes stdout and stderr for a git invocation.
+type CombinedRunner interface {
+	RunWithCombinedOutput(ctx context.Context, args ...string) (string, string, error)
+}
+
 // CLI executes git commands using the local git binary.
 type CLI struct{}
 
@@ -24,6 +29,12 @@ func NewCLI() *CLI {
 
 // Run invokes the git binary with the provided arguments.
 func (c *CLI) Run(ctx context.Context, args ...string) (string, error) {
+	stdout, _, err := c.RunWithCombinedOutput(ctx, args...)
+	return stdout, err
+}
+
+// RunWithCombinedOutput invokes git and returns trimmed stdout and stderr strings.
+func (c *CLI) RunWithCombinedOutput(ctx context.Context, args ...string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -31,14 +42,16 @@ func (c *CLI) Run(ctx context.Context, args ...string) (string, error) {
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
+	outStr := strings.TrimSpace(stdout.String())
+	errStr := strings.TrimSpace(stderr.String())
 	if err != nil {
-		if stderr.Len() > 0 {
-			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		if errStr != "" {
+			return outStr, errStr, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, errStr)
 		}
-		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return outStr, errStr, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 
-	return strings.TrimSpace(stdout.String()), nil
+	return outStr, errStr, nil
 }
 
 // Client provides higher-level git helpers used by the navigator.
@@ -54,6 +67,42 @@ func NewClient(r Runner) *Client {
 // NewDefaultClient constructs a Client backed by the CLI Runner.
 func NewDefaultClient() *Client {
 	return NewClient(NewCLI())
+}
+
+// FastForwardStrategy controls the fast-forward behavior of git merge.
+type FastForwardStrategy int
+
+const (
+	// FastForwardDefault defers to git's default fast-forward behavior.
+	FastForwardDefault FastForwardStrategy = iota
+	// FastForwardOnly enforces fast-forward merges only.
+	FastForwardOnly
+	// FastForwardNoFF disables fast-forward merges.
+	FastForwardNoFF
+)
+
+// MergeOptions configures merge behavior.
+type MergeOptions struct {
+	FastForward FastForwardStrategy
+	ExtraArgs   []string
+}
+
+// MergeResult captures stdout and stderr emitted by git merge.
+type MergeResult struct {
+	Stdout string
+	Stderr string
+}
+
+func (opts MergeOptions) args() []string {
+	args := make([]string, 0, len(opts.ExtraArgs)+1)
+	switch opts.FastForward {
+	case FastForwardOnly:
+		args = append(args, "--ff-only")
+	case FastForwardNoFF:
+		args = append(args, "--no-ff")
+	}
+	args = append(args, opts.ExtraArgs...)
+	return args
 }
 
 // CurrentBranch returns the current branch name.
@@ -134,6 +183,29 @@ func (c *Client) CheckoutBranch(ctx context.Context, branch string) (string, err
 		return "", err
 	}
 	return out, nil
+}
+
+// MergeBranch merges the provided branch into the current branch.
+func (c *Client) MergeBranch(ctx context.Context, branch string, opts MergeOptions) (MergeResult, error) {
+	if c == nil || c.runner == nil {
+		return MergeResult{}, errors.New("git client is not configured")
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return MergeResult{}, errors.New("branch name is required")
+	}
+
+	args := []string{"merge"}
+	args = append(args, opts.args()...)
+	args = append(args, branch)
+
+	if combined, ok := c.runner.(CombinedRunner); ok {
+		stdout, stderr, err := combined.RunWithCombinedOutput(ctx, args...)
+		return MergeResult{Stdout: stdout, Stderr: stderr}, err
+	}
+
+	stdout, err := c.runner.Run(ctx, args...)
+	return MergeResult{Stdout: stdout}, err
 }
 
 func parseReflogSubjects(output string) []string {
