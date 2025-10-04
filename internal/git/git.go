@@ -111,6 +111,31 @@ func (c *Client) BranchExists(ctx context.Context, branch string) (bool, error) 
 	return true, nil
 }
 
+// CheckoutBranch switches the working tree to the specified local branch.
+func (c *Client) CheckoutBranch(ctx context.Context, branch string) (string, error) {
+	if c == nil || c.runner == nil {
+		return "", errors.New("git client is not configured")
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return "", errors.New("branch name is required")
+	}
+
+	current, err := c.CurrentBranch(ctx)
+	if err != nil {
+		return "", err
+	}
+	if branch == current {
+		return fmt.Sprintf("already on '%s'", branch), nil
+	}
+
+	out, err := c.runner.Run(ctx, "checkout", branch)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
 func parseReflogSubjects(output string) []string {
 	lines := splitAndFilter(output)
 	branches := make([]string, 0, len(lines))

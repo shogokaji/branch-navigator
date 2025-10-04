@@ -7,10 +7,6 @@ import (
 	"testing"
 )
 
-func (c *Client) CheckoutBranch(ctx context.Context, branch string) (string, error) {
-	panic("not implemented in tests")
-}
-
 func TestExtractBranchFromSubject(t *testing.T) {
 	t.Parallel()
 
