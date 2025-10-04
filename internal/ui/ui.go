@@ -1,3 +1,172 @@
 package ui
 
-// Package ui handles terminal input and output for the branch navigator.
+import (
+	"bufio"
+	"fmt"
+	"io"
+)
+
+const clearScreen = "\033[2J\033[H"
+const highlightColor = "\033[32m"
+const resetColor = "\033[0m"
+
+// Branch represents a branch candidate with metadata required by the UI.
+type Branch struct {
+	Name    string
+	Current bool
+}
+
+// Result captures the outcome of the branch selection loop.
+type Result struct {
+	Branch    string
+	Quit      bool
+	AlreadyOn bool
+}
+
+// UI drives the interactive terminal selection flow.
+type UI struct {
+	in  io.Reader
+	out io.Writer
+}
+
+// New constructs a UI bound to the given input and output streams.
+func New(input io.Reader, output io.Writer) *UI {
+	return &UI{in: input, out: output}
+}
+
+// Select renders the branch list and processes key events until completion.
+func (u *UI) Select(branches []Branch) (Result, error) {
+	if u == nil {
+		return Result{}, fmt.Errorf("ui is nil")
+	}
+	if u.in == nil || u.out == nil {
+		return Result{}, fmt.Errorf("ui input and output must be configured")
+	}
+
+	reader := bufio.NewReader(u.in)
+	index := 0
+	maxIndex := len(branches) - 1
+	if err := u.render(branches, index); err != nil {
+		return Result{}, err
+	}
+
+	for {
+		b, err := reader.ReadByte()
+		if err != nil {
+			if err == io.EOF {
+				return Result{Quit: true}, nil
+			}
+			return Result{}, err
+		}
+
+		switch b {
+		case 'j':
+			if index < maxIndex {
+				index++
+				if err := u.render(branches, index); err != nil {
+					return Result{}, err
+				}
+			}
+		case 'k':
+			if index > 0 {
+				index--
+				if err := u.render(branches, index); err != nil {
+					return Result{}, err
+				}
+			}
+		case 'q', 'Q':
+			return Result{Quit: true}, nil
+		case '\r', '\n':
+			if len(branches) == 0 {
+				return Result{Quit: true}, nil
+			}
+			selected := branches[index]
+			if selected.Current {
+				if _, err := fmt.Fprintf(u.out, "already on '%s'\n", selected.Name); err != nil {
+					return Result{}, err
+				}
+				return Result{Branch: selected.Name, AlreadyOn: true}, nil
+			}
+			return Result{Branch: selected.Name}, nil
+		case 0x1b: // escape sequence
+			if err := u.handleEscape(reader, &index, maxIndex, branches); err != nil {
+				return Result{}, err
+			}
+		default:
+			// ignore other keys
+		}
+	}
+}
+
+func (u *UI) handleEscape(reader *bufio.Reader, index *int, maxIndex int, branches []Branch) error {
+	next, err := reader.ReadByte()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if next != '[' {
+		return nil
+	}
+
+	dir, err := reader.ReadByte()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	updated := false
+	switch dir {
+	case 'A':
+		if *index > 0 {
+			*index = *index - 1
+			updated = true
+		}
+	case 'B':
+		if maxIndex >= 0 && *index < maxIndex {
+			*index = *index + 1
+			updated = true
+		}
+	default:
+		return nil
+	}
+
+	if !updated {
+		return nil
+	}
+	return u.render(branches, *index)
+}
+
+func (u *UI) render(branches []Branch, selected int) error {
+	if _, err := fmt.Fprint(u.out, clearScreen); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(u.out, "Select a branch:"); err != nil {
+		return err
+	}
+	for i, branch := range branches {
+		line := branch.Name
+		if branch.Current {
+			line += " (current branch)"
+		}
+		if i == selected {
+			if _, err := fmt.Fprintf(u.out, "> %s%s%s\n", highlightColor, line, resetColor); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fmt.Fprintf(u.out, "  %s\n", line); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := fmt.Fprintln(u.out); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(u.out, "j/k or ↑/↓ to move, Enter to select, q to exit"); err != nil {
+		return err
+	}
+	return nil
+}
