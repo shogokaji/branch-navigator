@@ -256,3 +256,83 @@ func TestClientMergeBranch(t *testing.T) {
 		})
 	}
 }
+
+func TestClientDeleteBranch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	gitErr := errors.New("git delete failed")
+
+	cases := map[string]struct {
+		calls      []scriptCall
+		branch     string
+		options    DeleteOptions
+		wantResult DeleteResult
+		wantErr    error
+	}{
+		"success": {
+			branch: "feature/topic",
+			calls: []scriptCall{
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
+				{args: []string{"branch", "-d", "feature/topic"}, stdout: "Deleted branch feature/topic (was abc1234)."},
+			},
+			wantResult: DeleteResult{Stdout: "Deleted branch feature/topic (was abc1234)."},
+		},
+		"force": {
+			branch:  "feature/topic",
+			options: DeleteOptions{Force: true},
+			calls: []scriptCall{
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
+				{args: []string{"branch", "-D", "feature/topic"}, stdout: "Deleted branch feature/topic (was abc1234)."},
+			},
+			wantResult: DeleteResult{Stdout: "Deleted branch feature/topic (was abc1234)."},
+		},
+		"not-fully-merged": {
+			branch: "feature/topic",
+			calls: []scriptCall{
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
+				{args: []string{"branch", "-d", "feature/topic"}, stderr: "error: The branch 'feature/topic' is not fully merged.", err: gitErr},
+			},
+			wantResult: DeleteResult{Stderr: "error: The branch 'feature/topic' is not fully merged."},
+			wantErr:    ErrBranchNotFullyMerged,
+		},
+		"current-branch": {
+			branch: "main",
+			calls: []scriptCall{
+				{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
+			},
+			wantErr: ErrDeleteCurrentBranch,
+		},
+	}
+
+	for name, tc := range cases {
+		name := name
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := &scriptRunner{testingT: t, calls: tc.calls}
+			client := NewClient(runner)
+
+			result, err := client.DeleteBranch(ctx, tc.branch, tc.options)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.Stdout != tc.wantResult.Stdout {
+				t.Fatalf("unexpected stdout: got %q, want %q", result.Stdout, tc.wantResult.Stdout)
+			}
+			if result.Stderr != tc.wantResult.Stderr {
+				t.Fatalf("unexpected stderr: got %q, want %q", result.Stderr, tc.wantResult.Stderr)
+			}
+
+			if !runner.Exhausted() {
+				t.Fatalf("not all git calls were consumed: %d of %d", runner.index, len(runner.calls))
+			}
+		})
+	}
+}

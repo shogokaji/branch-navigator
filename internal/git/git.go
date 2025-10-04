@@ -93,6 +93,24 @@ type MergeResult struct {
 	Stderr string
 }
 
+// DeleteOptions configures delete behavior.
+type DeleteOptions struct {
+	Force bool
+}
+
+// DeleteResult captures stdout and stderr emitted by git branch -d/-D.
+type DeleteResult struct {
+	Stdout string
+	Stderr string
+}
+
+var (
+	// ErrBranchNotFullyMerged indicates the branch has not been fully merged.
+	ErrBranchNotFullyMerged = errors.New("branch is not fully merged")
+	// ErrDeleteCurrentBranch indicates the branch to delete is currently checked out.
+	ErrDeleteCurrentBranch = errors.New("cannot delete the current branch")
+)
+
 func (opts MergeOptions) args() []string {
 	args := make([]string, 0, len(opts.ExtraArgs)+1)
 	switch opts.FastForward {
@@ -206,6 +224,71 @@ func (c *Client) MergeBranch(ctx context.Context, branch string, opts MergeOptio
 
 	stdout, err := c.runner.Run(ctx, args...)
 	return MergeResult{Stdout: stdout}, err
+}
+
+// DeleteBranch removes the specified local branch, optionally forcing deletion.
+func (c *Client) DeleteBranch(ctx context.Context, branch string, opts DeleteOptions) (DeleteResult, error) {
+	if c == nil || c.runner == nil {
+		return DeleteResult{}, errors.New("git client is not configured")
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return DeleteResult{}, errors.New("branch name is required")
+	}
+
+	current, err := c.CurrentBranch(ctx)
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	if branch == current {
+		return DeleteResult{}, fmt.Errorf("%w: '%s'", ErrDeleteCurrentBranch, branch)
+	}
+
+	args := []string{"branch"}
+	if opts.Force {
+		args = append(args, "-D", branch)
+	} else {
+		args = append(args, "-d", branch)
+	}
+
+	if combined, ok := c.runner.(CombinedRunner); ok {
+		stdout, stderr, runErr := combined.RunWithCombinedOutput(ctx, args...)
+		stdout = strings.TrimSpace(stdout)
+		stderr = strings.TrimSpace(stderr)
+		result := DeleteResult{Stdout: stdout, Stderr: stderr}
+		if runErr != nil {
+			if !opts.Force && isNotFullyMerged(stdout, stderr) {
+				message := stderr
+				if message == "" {
+					message = stdout
+				}
+				message = strings.TrimSpace(message)
+				return result, fmt.Errorf("%w: %s", ErrBranchNotFullyMerged, message)
+			}
+			return result, runErr
+		}
+		return result, nil
+	}
+
+	stdout, runErr := c.runner.Run(ctx, args...)
+	stdout = strings.TrimSpace(stdout)
+	result := DeleteResult{Stdout: stdout}
+	if runErr != nil {
+		if !opts.Force && strings.Contains(strings.ToLower(runErr.Error()), "not fully merged") {
+			return result, fmt.Errorf("%w: %s", ErrBranchNotFullyMerged, runErr.Error())
+		}
+		return result, runErr
+	}
+	return result, nil
+}
+
+func isNotFullyMerged(stdout, stderr string) bool {
+	combined := strings.TrimSpace(stdout + "\n" + stderr)
+	if combined == "" {
+		return false
+	}
+	combined = strings.ToLower(combined)
+	return strings.Contains(combined, "not fully merged")
 }
 
 func parseReflogSubjects(output string) []string {
