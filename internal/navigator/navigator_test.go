@@ -68,12 +68,16 @@ func TestNavigatorRecentBranches(t *testing.T) {
 
 	ctx := context.Background()
 	errExists := errors.New("branch exists failure")
+	reflogUnavailable := errors.New("reflog unavailable")
+	reflogFailed := errors.New("reflog failed")
+	fallbackFailed := errors.New("fallback failed")
 
 	cases := map[string]struct {
-		limit   int
-		git     *fakeGit
-		want    []string
-		wantErr error
+		limit           int
+		git             *fakeGit
+		want            []string
+		wantErr         error
+		wantErrContains []error
 	}{
 		"reflog-only": {
 			limit: 3,
@@ -107,6 +111,19 @@ func TestNavigatorRecentBranches(t *testing.T) {
 			git:   &fakeGit{current: "main"},
 			want:  nil,
 		},
+		"reflog-error-fallback": {
+			limit: 2,
+			git: &fakeGit{
+				current:   "main",
+				errReflog: reflogUnavailable,
+				fallback:  []string{"feature/a", "feature/b"},
+				exists: map[string]bool{
+					"feature/a": true,
+					"feature/b": true,
+				},
+			},
+			want: []string{"feature/a", "feature/b"},
+		},
 		"branch-exists-error": {
 			limit: 1,
 			git: &fakeGit{
@@ -117,6 +134,19 @@ func TestNavigatorRecentBranches(t *testing.T) {
 				existsErrFor: "feature/broken",
 			},
 			wantErr: errExists,
+		},
+		"reflog-and-fallback-error": {
+			limit: 2,
+			git: &fakeGit{
+				current:     "main",
+				errReflog:   reflogFailed,
+				errFallback: fallbackFailed,
+			},
+			wantErr: fallbackFailed,
+			wantErrContains: []error{
+				reflogFailed,
+				fallbackFailed,
+			},
 		},
 	}
 
@@ -132,9 +162,17 @@ func TestNavigatorRecentBranches(t *testing.T) {
 			}
 
 			got, err := nav.RecentBranches(ctx, tc.limit)
-			if tc.wantErr != nil {
-				if err == nil || !errors.Is(err, tc.wantErr) {
+			if tc.wantErr != nil || len(tc.wantErrContains) > 0 {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
 					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+				for _, expected := range tc.wantErrContains {
+					if !errors.Is(err, expected) {
+						t.Fatalf("expected error to include %v, got %v", expected, err)
+					}
 				}
 				return
 			}

@@ -45,20 +45,24 @@ func (n *Navigator) RecentBranches(ctx context.Context, limit int) ([]string, er
 	seen := map[string]struct{}{current: struct{}{}}
 
 	reflogBranches, err := n.git.ReflogBranchMoves(ctx)
+	var reflogErr error
 	if err != nil {
-		return nil, err
-	}
-
-	results, err = n.appendBranches(ctx, results, reflogBranches, seen, limit)
-	if err != nil {
-		return nil, err
-	}
-	if len(results) >= limit {
-		return results, nil
+		reflogErr = err
+	} else {
+		results, err = n.appendBranches(ctx, results, reflogBranches, seen, limit)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) >= limit {
+			return results, nil
+		}
 	}
 
 	fallbackBranches, err := n.git.BranchesByCommitDate(ctx)
 	if err != nil {
+		if reflogErr != nil {
+			return nil, errors.Join(reflogErr, err)
+		}
 		return nil, err
 	}
 
