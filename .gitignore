@@ -33,3 +33,5 @@ go.work.sum
 
 # Build cache
 .cache/
+
+dist/
