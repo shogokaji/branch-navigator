@@ -11,15 +11,13 @@ version: 1
 before:
   hooks:
     # You may remove this if you don't use go modules.
-    - mkdir -p .cache/go-build
-    - env GOCACHE=$PWD/.cache/go-build go mod tidy
+    - go mod tidy
     # you may remove this if you don't need go generate
-    - env GOCACHE=$PWD/.cache/go-build go generate ./...
+    - go generate ./...
 
 builds:
   - env:
       - CGO_ENABLED=0
-      - GOCACHE={{ .Env.PWD }}/.cache/go-build
     main: ./cmd/branch-navigator
     binary: branch-navigator
     goos:
