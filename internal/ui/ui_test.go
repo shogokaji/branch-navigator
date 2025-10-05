@@ -136,3 +136,31 @@ func TestSelectCurrentBranch(t *testing.T) {
 		t.Fatalf("expected already on message in output: %q", output.String())
 	}
 }
+
+func TestSelectHandlesControlKeys(t *testing.T) {
+	t.Parallel()
+
+	input := bytes.NewBuffer([]byte{0x03})
+	output := &bytes.Buffer{}
+
+	branches := []Branch{
+		{Name: "main", Current: true},
+		{Name: "feature/alpha", Current: false},
+	}
+
+	ui := New(input, output)
+	result, err := ui.Select(branches)
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+
+	if !result.Quit {
+		t.Fatal("expected quit result for Ctrl+C")
+	}
+	if result.Branch != "" {
+		t.Fatalf("expected no branch selection, got %q", result.Branch)
+	}
+	if result.AlreadyOn {
+		t.Fatal("expected AlreadyOn to be false when quitting")
+	}
+}

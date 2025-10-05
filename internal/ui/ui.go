@@ -72,6 +72,8 @@ func (u *UI) Select(branches []Branch) (Result, error) {
 		}
 
 		switch b {
+		case 0x03, 0x04, 0x1a: // Ctrl+C, Ctrl+D, Ctrl+Z
+			return Result{Quit: true}, nil
 		case 'j':
 			if index < maxIndex {
 				index++
