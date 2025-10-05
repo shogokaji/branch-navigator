@@ -23,16 +23,28 @@ const (
 	actionDelete   action = "delete"
 )
 
+const usageText = `Usage: branch-navigator [-c|-m|-d] [-n N] [-h]
+
+Options:
+  -c	checkout the selected branch (default)
+  -m	merge the selected branch into the current branch
+  -d	delete the selected local branch
+  -n	maximum number of branches to list (default 10)
+      --limit N	alias for -n
+  -h	show this help message
+`
+
+type cliOptions struct {
+	action action
+	limit  int
+}
+
 func main() {
-	checkout := flag.Bool("c", false, "checkout the selected branch (default)")
-	merge := flag.Bool("m", false, "merge the selected branch into the current branch")
-	deleteBranch := flag.Bool("d", false, "delete the selected local branch")
-	limit := flag.Int("n", 10, "maximum number of branches to list")
-
-	flag.Parse()
-
-	act, err := resolveAction(*checkout, *merge, *deleteBranch)
+	opts, err := parseArgs(os.Args[1:], os.Stdout, os.Stderr)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
@@ -45,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	branches, err := nav.RecentBranches(ctx, *limit)
+	branches, err := nav.RecentBranches(ctx, opts.limit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -74,7 +86,7 @@ func main() {
 		return
 	}
 
-	switch act {
+	switch opts.action {
 	case actionCheckout:
 		message, err := client.CheckoutBranch(ctx, result.Branch)
 		if err != nil {
@@ -106,9 +118,44 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "%s action is not implemented yet\n", act)
+		fmt.Fprintf(os.Stderr, "%s action is not implemented yet\n", opts.action)
 		os.Exit(2)
 	}
+}
+
+func parseArgs(args []string, usageOut, errorOut io.Writer) (cliOptions, error) {
+	fs := flag.NewFlagSet("branch-navigator", flag.ContinueOnError)
+	fs.SetOutput(errorOut)
+
+	fs.Usage = func() {
+		fmt.Fprint(usageOut, usageText)
+	}
+
+	opts := cliOptions{limit: 10}
+	checkout := fs.Bool("c", false, "checkout the selected branch (default)")
+	merge := fs.Bool("m", false, "merge the selected branch into the current branch")
+	deleteBranch := fs.Bool("d", false, "delete the selected local branch")
+	fs.IntVar(&opts.limit, "n", 10, "maximum number of branches to list")
+	fs.IntVar(&opts.limit, "limit", 10, "maximum number of branches to list")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return cliOptions{}, flag.ErrHelp
+		}
+		return cliOptions{}, err
+	}
+
+	act, err := resolveAction(*checkout, *merge, *deleteBranch)
+	if err != nil {
+		return cliOptions{}, err
+	}
+
+	if opts.limit <= 0 {
+		return cliOptions{}, fmt.Errorf("limit must be greater than 0")
+	}
+
+	opts.action = act
+	return opts, nil
 }
 
 func resolveAction(checkout, merge, deleteBranch bool) (action, error) {
