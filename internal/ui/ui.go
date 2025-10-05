@@ -4,11 +4,15 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+
+	"golang.org/x/term"
 )
 
 const clearScreen = "\033[2J\033[H"
 const highlightColor = "\033[32m"
 const resetColor = "\033[0m"
+const lineBreak = "\r\n"
 
 // Branch represents a branch candidate with metadata required by the UI.
 type Branch struct {
@@ -41,6 +45,14 @@ func (u *UI) Select(branches []Branch) (Result, error) {
 	}
 	if u.in == nil || u.out == nil {
 		return Result{}, fmt.Errorf("ui input and output must be configured")
+	}
+
+	restore, err := u.enterRawMode()
+	if err != nil {
+		return Result{}, err
+	}
+	if restore != nil {
+		defer restore()
 	}
 
 	reader := bufio.NewReader(u.in)
@@ -82,7 +94,7 @@ func (u *UI) Select(branches []Branch) (Result, error) {
 			}
 			selected := branches[index]
 			if selected.Current {
-				if _, err := fmt.Fprintf(u.out, "already on '%s'\n", selected.Name); err != nil {
+				if _, err := fmt.Fprintf(u.out, "already on '%s'%s", selected.Name, lineBreak); err != nil {
 					return Result{}, err
 				}
 				return Result{Branch: selected.Name, AlreadyOn: true}, nil
@@ -144,7 +156,7 @@ func (u *UI) render(branches []Branch, selected int) error {
 	if _, err := fmt.Fprint(u.out, clearScreen); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(u.out, "Select a branch:"); err != nil {
+	if _, err := fmt.Fprint(u.out, "Select a branch:"+lineBreak); err != nil {
 		return err
 	}
 	for i, branch := range branches {
@@ -153,20 +165,41 @@ func (u *UI) render(branches []Branch, selected int) error {
 			line += " (current branch)"
 		}
 		if i == selected {
-			if _, err := fmt.Fprintf(u.out, "> %s%s%s\n", highlightColor, line, resetColor); err != nil {
+			if _, err := fmt.Fprintf(u.out, "> %s%s%s%s", highlightColor, line, resetColor, lineBreak); err != nil {
 				return err
 			}
 		} else {
-			if _, err := fmt.Fprintf(u.out, "  %s\n", line); err != nil {
+			if _, err := fmt.Fprintf(u.out, "  %s%s", line, lineBreak); err != nil {
 				return err
 			}
 		}
 	}
-	if _, err := fmt.Fprintln(u.out); err != nil {
+	if _, err := fmt.Fprint(u.out, lineBreak); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(u.out, "j/k or ↑/↓ to move, Enter to select, q to exit"); err != nil {
+	if _, err := fmt.Fprint(u.out, "j/k or ↑/↓ to move, Enter to select, q to exit"+lineBreak); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (u *UI) enterRawMode() (func(), error) {
+	file, ok := u.in.(*os.File)
+	if !ok {
+		return nil, nil
+	}
+
+	fd := int(file.Fd())
+	if !term.IsTerminal(fd) {
+		return nil, nil
+	}
+
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure terminal for interactive input: %w", err)
+	}
+
+	return func() {
+		_ = term.Restore(fd, state)
+	}, nil
 }
