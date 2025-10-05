@@ -141,6 +141,19 @@ func TestSelectCurrentBranch(t *testing.T) {
 	}
 }
 
+func TestSelectEmptyBranches(t *testing.T) {
+	t.Parallel()
+
+	ui := New(bytes.NewBufferString("\r"), &bytes.Buffer{})
+	result, err := ui.Select(nil)
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+	if !result.Quit {
+		t.Fatalf("expected quit result when list empty, got %+v", result)
+	}
+}
+
 func TestSelectNilUI(t *testing.T) {
 	t.Parallel()
 

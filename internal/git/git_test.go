@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -533,5 +534,28 @@ func TestClientDeleteBranch(t *testing.T) {
 				t.Fatalf("not all git calls were consumed: %d of %d", runner.index, len(runner.calls))
 			}
 		})
+	}
+}
+
+func TestCLIRunCommands(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cli := NewCLI()
+
+	out, err := cli.Run(ctx, "--version")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(out), "git version") {
+		t.Fatalf("unexpected git version output: %q", out)
+	}
+
+	_, stderr, err := cli.RunWithCombinedOutput(ctx, "--invalid-flag")
+	if err == nil {
+		t.Fatal("expected error for invalid flag")
+	}
+	if stderr == "" {
+		t.Fatalf("expected stderr output for invalid flag")
 	}
 }
