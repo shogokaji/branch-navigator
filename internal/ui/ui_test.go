@@ -2,8 +2,12 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
+
+	"golang.org/x/term"
 )
 
 const clearSequence = "\033[2J\033[H"
@@ -134,5 +138,51 @@ func TestSelectCurrentBranch(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "already on 'main'") {
 		t.Fatalf("expected already on message in output: %q", output.String())
+	}
+}
+
+func TestSelectNilUI(t *testing.T) {
+	t.Parallel()
+
+	var terminal *UI
+	if _, err := terminal.Select(nil); err == nil || err.Error() != "ui is nil" {
+		t.Fatalf("expected ui is nil error, got %v", err)
+	}
+}
+
+func TestSelectMissingStreams(t *testing.T) {
+	t.Parallel()
+
+	ui := &UI{}
+	if _, err := ui.Select(nil); err == nil || err.Error() != "ui input and output must be configured" {
+		t.Fatalf("expected missing streams error, got %v", err)
+	}
+}
+
+func TestSelectEnterRawModeFailure(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "terminal")
+	if err != nil {
+		t.Fatalf("CreateTemp returned error: %v", err)
+	}
+	defer f.Close()
+
+	origMakeRaw := makeRaw
+	origIsTerminal := isTerminal
+	makeRaw = func(fd int) (*term.State, error) {
+		return nil, fmt.Errorf("failed to enter raw mode")
+	}
+	isTerminal = func(fd int) bool {
+		return true
+	}
+	defer func() {
+		makeRaw = origMakeRaw
+		isTerminal = origIsTerminal
+	}()
+
+	ui := &UI{in: f, out: &bytes.Buffer{}}
+	if _, err := ui.Select(nil); err == nil || !strings.Contains(err.Error(), "failed to enter raw mode") {
+		t.Fatalf("expected raw mode error, got %v", err)
 	}
 }

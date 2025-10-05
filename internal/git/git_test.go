@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"reflect"
 	"testing"
 )
@@ -252,6 +253,204 @@ func TestClientMergeBranch(t *testing.T) {
 
 			if !runner.Exhausted() {
 				t.Fatalf("not all git calls were consumed: %d of %d", runner.index, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestClientCurrentBranch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	errRunner := errors.New("rev-parse failed")
+
+	cases := map[string]struct {
+		client  *Client
+		want    string
+		wantErr error
+	}{
+		"success": {
+			client: NewClient(&scriptRunner{
+				testingT: t,
+				calls: []scriptCall{
+					{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, stdout: "main"},
+				},
+			}),
+			want: "main",
+		},
+		"runner-error": {
+			client: NewClient(&scriptRunner{
+				testingT: t,
+				calls: []scriptCall{
+					{args: []string{"rev-parse", "--abbrev-ref", "HEAD"}, err: errRunner},
+				},
+			}),
+			wantErr: errRunner,
+		},
+		"nil-client": {
+			client:  nil,
+			wantErr: errors.New("git client is not configured"),
+		},
+	}
+
+	for name, tc := range cases {
+		name := name
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var (
+				got string
+				err error
+			)
+			if tc.client == nil {
+				var nilClient *Client
+				got, err = nilClient.CurrentBranch(ctx)
+			} else {
+				got, err = tc.client.CurrentBranch(ctx)
+			}
+			if tc.wantErr != nil {
+				if err == nil || err.Error() != tc.wantErr.Error() {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got != tc.want {
+				t.Fatalf("unexpected branch: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClientReflogBranchMoves(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	reflogOutput := "checkout: moving from main to feature/one\ncheckout: switching to feature/two"
+	reflogErr := errors.New("reflog failed")
+
+	client := NewClient(&scriptRunner{
+		testingT: t,
+		calls: []scriptCall{
+			{args: []string{"reflog", "--format=%gs"}, stdout: reflogOutput},
+		},
+	})
+
+	branches, err := client.ReflogBranchMoves(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(branches, []string{"feature/one", "feature/two"}) {
+		t.Fatalf("unexpected branches: %v", branches)
+	}
+
+	failing := NewClient(&scriptRunner{
+		testingT: t,
+		calls: []scriptCall{
+			{args: []string{"reflog", "--format=%gs"}, err: reflogErr},
+		},
+	})
+
+	if _, err := failing.ReflogBranchMoves(ctx); !errors.Is(err, reflogErr) {
+		t.Fatalf("expected reflog error, got %v", err)
+	}
+}
+
+func TestClientBranchesByCommitDate(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	branches := "feature/one\nfeature/two"
+	listErr := errors.New("for-each-ref failed")
+
+	client := NewClient(&scriptRunner{
+		testingT: t,
+		calls: []scriptCall{
+			{args: []string{"for-each-ref", "--format=%(refname:short)", "--sort=-committerdate", "refs/heads"}, stdout: branches},
+		},
+	})
+
+	got, err := client.BranchesByCommitDate(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"feature/one", "feature/two"}) {
+		t.Fatalf("unexpected branches: %v", got)
+	}
+
+	failing := NewClient(&scriptRunner{
+		testingT: t,
+		calls: []scriptCall{
+			{args: []string{"for-each-ref", "--format=%(refname:short)", "--sort=-committerdate", "refs/heads"}, err: listErr},
+		},
+	})
+	if _, err := failing.BranchesByCommitDate(ctx); !errors.Is(err, listErr) {
+		t.Fatalf("expected error %v, got %v", listErr, err)
+	}
+}
+
+func TestClientBranchExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	exitCmd := exec.Command("sh", "-c", "exit 1")
+	showErr := exitCmd.Run()
+	otherErr := errors.New("show-ref failed")
+
+	cases := map[string]struct {
+		calls   []scriptCall
+		branch  string
+		want    bool
+		wantErr error
+	}{
+		"exists": {
+			branch: "feature/one",
+			calls: []scriptCall{
+				{args: []string{"show-ref", "--verify", "--quiet", "refs/heads/feature/one"}},
+			},
+			want: true,
+		},
+		"missing": {
+			branch: "feature/two",
+			calls: []scriptCall{
+				{args: []string{"show-ref", "--verify", "--quiet", "refs/heads/feature/two"}, err: showErr},
+			},
+			want: false,
+		},
+		"empty-name": {
+			branch: "",
+			want:   false,
+		},
+		"other-error": {
+			branch: "feature/bad",
+			calls: []scriptCall{
+				{args: []string{"show-ref", "--verify", "--quiet", "refs/heads/feature/bad"}, err: otherErr},
+			},
+			wantErr: otherErr,
+		},
+	}
+
+	for name, tc := range cases {
+		name := name
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := &scriptRunner{testingT: t, calls: tc.calls}
+			client := NewClient(runner)
+
+			got, err := client.BranchExists(ctx, tc.branch)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got != tc.want {
+				t.Fatalf("BranchExists(%q) = %v, want %v", tc.branch, got, tc.want)
 			}
 		})
 	}

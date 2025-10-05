@@ -14,6 +14,12 @@ const highlightColor = "\033[32m"
 const resetColor = "\033[0m"
 const lineBreak = "\r\n"
 
+var (
+	makeRaw      = term.MakeRaw
+	restoreState = term.Restore
+	isTerminal   = term.IsTerminal
+)
+
 // Branch represents a branch candidate with metadata required by the UI.
 type Branch struct {
 	Name    string
@@ -190,16 +196,16 @@ func (u *UI) enterRawMode() (func(), error) {
 	}
 
 	fd := int(file.Fd())
-	if !term.IsTerminal(fd) {
+	if !isTerminal(fd) {
 		return nil, nil
 	}
 
-	state, err := term.MakeRaw(fd)
+	state, err := makeRaw(fd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure terminal for interactive input: %w", err)
 	}
 
 	return func() {
-		_ = term.Restore(fd, state)
+		_ = restoreState(fd, state)
 	}, nil
 }
