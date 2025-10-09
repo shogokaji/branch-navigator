@@ -6,6 +6,8 @@ import (
 	"flag"
 	"strings"
 	"testing"
+
+	"branch-navigator/internal/ui"
 )
 
 func TestParseArgsDefaultActionCheckout(t *testing.T) {
@@ -94,5 +96,59 @@ func TestParseArgsHelp(t *testing.T) {
 	}
 	if !strings.Contains(output, "  -c\tcheckout the selected branch (default)") {
 		t.Fatalf("usage output missing -c description: %q", output)
+	}
+}
+
+func TestActionDetailsFor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		action action
+		want   ui.ActionDetails
+	}{
+		{
+			name:   "checkout",
+			action: actionCheckout,
+			want: ui.ActionDetails{
+				Name:        "Checkout branch",
+				Description: "Switch to the selected branch.",
+				EnterLabel:  "checkout the selected branch",
+			},
+		},
+		{
+			name:   "merge",
+			action: actionMerge,
+			want: ui.ActionDetails{
+				Name:        "Merge branch",
+				Description: "Merge the selected branch into the current branch.",
+				EnterLabel:  "merge the selected branch into the current branch",
+			},
+		},
+		{
+			name:   "delete",
+			action: actionDelete,
+			want: ui.ActionDetails{
+				Name:        "Delete branch",
+				Description: "Delete the selected local branch.",
+				EnterLabel:  "delete the selected branch",
+			},
+		},
+		{
+			name:   "unknown",
+			action: action("unknown"),
+			want:   ui.ActionDetails{},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := actionDetailsFor(tt.action)
+			if got != tt.want {
+				t.Fatalf("actionDetailsFor(%q) = %#v, want %#v", tt.action, got, tt.want)
+			}
+		})
 	}
 }

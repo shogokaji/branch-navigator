@@ -63,6 +63,7 @@ Options:
 - `Ctrl+C`, `Ctrl+D`, `Ctrl+Z`, or EOF: abort immediately.
 
 The UI runs in raw mode when the input is a TTY. If you select the current branch, the tool short-circuits after printing `already on '<branch>'`.
+The header now highlights the pending action (for example "Action: Checkout branch" with a short blurb), and the footer reminds you what pressing `Enter` will trigger.
 
 ## How branches are chosen
 1. Query `git reflog --format=%gs` to replay the HEAD reflog and extract branch moves.

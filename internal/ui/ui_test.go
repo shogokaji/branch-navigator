@@ -8,6 +8,12 @@ import (
 
 const clearSequence = "\033[2J\033[H"
 
+var checkoutAction = ActionDetails{
+	Name:        "Checkout branch",
+	Description: "Switch to the selected branch.",
+	EnterLabel:  "checkout the selected branch",
+}
+
 func framesFromOutput(t *testing.T, output string) []string {
 	t.Helper()
 	frames := strings.Split(output, clearSequence)
@@ -32,7 +38,7 @@ func TestSelectMovesWithJAndEnter(t *testing.T) {
 		{Name: "feature/awesome", Current: false},
 	}
 
-	ui := New(input, output)
+	ui := New(input, output, checkoutAction)
 	result, err := ui.Select(branches)
 	if err != nil {
 		t.Fatalf("Select returned error: %v", err)
@@ -49,6 +55,13 @@ func TestSelectMovesWithJAndEnter(t *testing.T) {
 	}
 
 	frames := framesFromOutput(t, output.String())
+	first := frames[0]
+	if !strings.Contains(first, "Action: Checkout branch") {
+		t.Fatalf("header missing action name. frame=%q", first)
+	}
+	if !strings.Contains(first, "Switch to the selected branch.") {
+		t.Fatalf("header missing action description. frame=%q", first)
+	}
 	last := frames[len(frames)-1]
 	if !strings.Contains(last, "> \033[32mfeature/awesome\033[0m") {
 		t.Fatalf("highlighted selection missing or incorrect. frame=%q", last)
@@ -56,7 +69,7 @@ func TestSelectMovesWithJAndEnter(t *testing.T) {
 	if !strings.Contains(last, "  main (current branch)") {
 		t.Fatalf("current branch marker missing. frame=%q", last)
 	}
-	if !strings.Contains(output.String(), "j/k or ↑/↓ to move, Enter to select, q to exit") {
+	if !strings.Contains(output.String(), "j/k or ↑/↓ to move, Enter to checkout the selected branch, q to exit") {
 		t.Fatalf("help message missing from output: %q", output.String())
 	}
 }
@@ -73,7 +86,7 @@ func TestSelectHandlesArrowKeys(t *testing.T) {
 		{Name: "feature/beta", Current: false},
 	}
 
-	ui := New(input, output)
+	ui := New(input, output, checkoutAction)
 	result, err := ui.Select(branches)
 	if err != nil {
 		t.Fatalf("Select returned error: %v", err)
@@ -95,7 +108,7 @@ func TestSelectQuit(t *testing.T) {
 		{Name: "feature/alpha", Current: false},
 	}
 
-	ui := New(input, output)
+	ui := New(input, output, checkoutAction)
 	result, err := ui.Select(branches)
 	if err != nil {
 		t.Fatalf("Select returned error: %v", err)
@@ -120,7 +133,7 @@ func TestSelectCurrentBranch(t *testing.T) {
 		{Name: "feature/alpha", Current: false},
 	}
 
-	ui := New(input, output)
+	ui := New(input, output, checkoutAction)
 	result, err := ui.Select(branches)
 	if err != nil {
 		t.Fatalf("Select returned error: %v", err)
@@ -148,7 +161,7 @@ func TestSelectHandlesControlKeys(t *testing.T) {
 		{Name: "feature/alpha", Current: false},
 	}
 
-	ui := New(input, output)
+	ui := New(input, output, checkoutAction)
 	result, err := ui.Select(branches)
 	if err != nil {
 		t.Fatalf("Select returned error: %v", err)

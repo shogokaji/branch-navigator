@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 )
@@ -13,6 +14,13 @@ const clearScreen = "\033[2J\033[H"
 const highlightColor = "\033[32m"
 const resetColor = "\033[0m"
 const lineBreak = "\r\n"
+
+// ActionDetails captures the labels describing the currently configured operation.
+type ActionDetails struct {
+	Name        string
+	Description string
+	EnterLabel  string
+}
 
 // Branch represents a branch candidate with metadata required by the UI.
 type Branch struct {
@@ -29,13 +37,14 @@ type Result struct {
 
 // UI drives the interactive terminal selection flow.
 type UI struct {
-	in  io.Reader
-	out io.Writer
+	in     io.Reader
+	out    io.Writer
+	action ActionDetails
 }
 
 // New constructs a UI bound to the given input and output streams.
-func New(input io.Reader, output io.Writer) *UI {
-	return &UI{in: input, out: output}
+func New(input io.Reader, output io.Writer, action ActionDetails) *UI {
+	return &UI{in: input, out: output, action: action}
 }
 
 // Select renders the branch list and processes key events until completion.
@@ -158,6 +167,25 @@ func (u *UI) render(branches []Branch, selected int) error {
 	if _, err := fmt.Fprint(u.out, clearScreen); err != nil {
 		return err
 	}
+
+	headerPrinted := false
+	if name := strings.TrimSpace(u.action.Name); name != "" {
+		if _, err := fmt.Fprintf(u.out, "Action: %s%s", name, lineBreak); err != nil {
+			return err
+		}
+		headerPrinted = true
+	}
+	if description := strings.TrimSpace(u.action.Description); description != "" {
+		if _, err := fmt.Fprintf(u.out, "%s%s", description, lineBreak); err != nil {
+			return err
+		}
+		headerPrinted = true
+	}
+	if headerPrinted {
+		if _, err := fmt.Fprint(u.out, lineBreak); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprint(u.out, "Select a branch:"+lineBreak); err != nil {
 		return err
 	}
@@ -179,7 +207,11 @@ func (u *UI) render(branches []Branch, selected int) error {
 	if _, err := fmt.Fprint(u.out, lineBreak); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprint(u.out, "j/k or ↑/↓ to move, Enter to select, q to exit"+lineBreak); err != nil {
+	enterLabel := strings.TrimSpace(u.action.EnterLabel)
+	if enterLabel == "" {
+		enterLabel = "select"
+	}
+	if _, err := fmt.Fprintf(u.out, "j/k or ↑/↓ to move, Enter to %s, q to exit%s", enterLabel, lineBreak); err != nil {
 		return err
 	}
 	return nil
