@@ -14,6 +14,13 @@ const highlightColor = "\033[32m"
 const resetColor = "\033[0m"
 const lineBreak = "\r\n"
 
+// ActionDetails captures the labels describing the currently configured operation.
+type ActionDetails struct {
+	Name        string
+	Description string
+	EnterLabel  string
+}
+
 // Branch represents a branch candidate with metadata required by the UI.
 type Branch struct {
 	Name    string
@@ -29,13 +36,14 @@ type Result struct {
 
 // UI drives the interactive terminal selection flow.
 type UI struct {
-	in  io.Reader
-	out io.Writer
+	in     io.Reader
+	out    io.Writer
+	action ActionDetails
 }
 
 // New constructs a UI bound to the given input and output streams.
-func New(input io.Reader, output io.Writer) *UI {
-	return &UI{in: input, out: output}
+func New(input io.Reader, output io.Writer, action ActionDetails) *UI {
+	return &UI{in: input, out: output, action: action}
 }
 
 // Select renders the branch list and processes key events until completion.
