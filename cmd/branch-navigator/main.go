@@ -159,7 +159,28 @@ func parseArgs(args []string, usageOut, errorOut io.Writer) (cliOptions, error) 
 }
 
 func actionDetailsFor(act action) ui.ActionDetails {
-	return ui.ActionDetails{}
+	switch act {
+	case actionCheckout:
+		return ui.ActionDetails{
+			Name:        "Checkout branch",
+			Description: "Switch to the selected branch.",
+			EnterLabel:  "checkout the selected branch",
+		}
+	case actionMerge:
+		return ui.ActionDetails{
+			Name:        "Merge branch",
+			Description: "Merge the selected branch into the current branch.",
+			EnterLabel:  "merge the selected branch into the current branch",
+		}
+	case actionDelete:
+		return ui.ActionDetails{
+			Name:        "Delete branch",
+			Description: "Delete the selected local branch.",
+			EnterLabel:  "delete the selected branch",
+		}
+	default:
+		return ui.ActionDetails{}
+	}
 }
 
 func resolveAction(checkout, merge, deleteBranch bool) (action, error) {

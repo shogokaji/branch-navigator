@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 )
@@ -166,6 +167,25 @@ func (u *UI) render(branches []Branch, selected int) error {
 	if _, err := fmt.Fprint(u.out, clearScreen); err != nil {
 		return err
 	}
+
+	headerPrinted := false
+	if name := strings.TrimSpace(u.action.Name); name != "" {
+		if _, err := fmt.Fprintf(u.out, "Action: %s%s", name, lineBreak); err != nil {
+			return err
+		}
+		headerPrinted = true
+	}
+	if description := strings.TrimSpace(u.action.Description); description != "" {
+		if _, err := fmt.Fprintf(u.out, "%s%s", description, lineBreak); err != nil {
+			return err
+		}
+		headerPrinted = true
+	}
+	if headerPrinted {
+		if _, err := fmt.Fprint(u.out, lineBreak); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprint(u.out, "Select a branch:"+lineBreak); err != nil {
 		return err
 	}
@@ -187,7 +207,11 @@ func (u *UI) render(branches []Branch, selected int) error {
 	if _, err := fmt.Fprint(u.out, lineBreak); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprint(u.out, "j/k or ↑/↓ to move, Enter to select, q to exit"+lineBreak); err != nil {
+	enterLabel := strings.TrimSpace(u.action.EnterLabel)
+	if enterLabel == "" {
+		enterLabel = "select"
+	}
+	if _, err := fmt.Fprintf(u.out, "j/k or ↑/↓ to move, Enter to %s, q to exit%s", enterLabel, lineBreak); err != nil {
 		return err
 	}
 	return nil
