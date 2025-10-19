@@ -31,12 +31,14 @@ Options:
   -d	delete the selected local branch
   -n	maximum number of branches to list (default 10)
       --limit N	alias for -n
+      --theme NAME	color theme (catppuccin, nord, classic, solarized, gruvbox, onedark; default catppuccin)
   -h	show this help message
 `
 
 type cliOptions struct {
 	action action
 	limit  int
+	theme  string
 }
 
 func main() {
@@ -75,7 +77,13 @@ func main() {
 		uiBranches = append(uiBranches, ui.Branch{Name: branch})
 	}
 
-	terminal := ui.New(os.Stdin, os.Stdout, actionDetailsFor(opts.action))
+	theme, err := resolveTheme(opts.theme)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+
+	terminal := ui.NewWithTheme(os.Stdin, os.Stdout, actionDetailsFor(opts.action), theme)
 	result, err := terminal.Select(uiBranches)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -137,6 +145,7 @@ func parseArgs(args []string, usageOut, errorOut io.Writer) (cliOptions, error) 
 	deleteBranch := fs.Bool("d", false, "delete the selected local branch")
 	fs.IntVar(&opts.limit, "n", 10, "maximum number of branches to list")
 	fs.IntVar(&opts.limit, "limit", 10, "maximum number of branches to list")
+	fs.StringVar(&opts.theme, "theme", "", "color theme (catppuccin, nord, classic, solarized, gruvbox, onedark)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -203,6 +212,22 @@ func resolveAction(checkout, merge, deleteBranch bool) (action, error) {
 	default:
 		return "", errors.New("only one of -c, -m, or -d may be specified")
 	}
+}
+
+func resolveTheme(flagValue string) (ui.Theme, error) {
+	name := strings.TrimSpace(flagValue)
+	if name == "" {
+		name = strings.TrimSpace(os.Getenv("BRANCH_NAVIGATOR_THEME"))
+	}
+	if name == "" {
+		return ui.DefaultTheme, nil
+	}
+
+	theme, ok := ui.ThemeByName(name)
+	if !ok {
+		return ui.Theme{}, fmt.Errorf("unknown theme %q (available: %s)", name, strings.Join(ui.AvailableThemeNames(), ", "))
+	}
+	return theme, nil
 }
 
 func printIfNotEmpty(w io.Writer, message string) {

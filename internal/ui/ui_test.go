@@ -56,20 +56,24 @@ func TestSelectMovesWithJAndEnter(t *testing.T) {
 
 	frames := framesFromOutput(t, output.String())
 	first := frames[0]
-	if !strings.Contains(first, "Action: Checkout branch") {
-		t.Fatalf("header missing action name. frame=%q", first)
+	expectedTheme := DefaultTheme
+	actionHeader := expectedTheme.ActionLabel + "Action: Checkout branch" + resetColor
+	if !strings.Contains(first, actionHeader) {
+		t.Fatalf("header missing or incorrect action name. frame=%q", first)
 	}
-	if !strings.Contains(first, "Switch to the selected branch.") {
-		t.Fatalf("header missing action description. frame=%q", first)
+	descriptionLine := expectedTheme.ActionDescription + "Switch to the selected branch." + resetColor
+	if !strings.Contains(first, descriptionLine) {
+		t.Fatalf("header missing or incorrect action description. frame=%q", first)
 	}
 	last := frames[len(frames)-1]
-	if !strings.Contains(last, "> \033[32mfeature/awesome\033[0m") {
+	if !strings.Contains(last, expectedTheme.Selected+"> feature/awesome"+resetColor) {
 		t.Fatalf("highlighted selection missing or incorrect. frame=%q", last)
 	}
-	if !strings.Contains(last, "  main (current branch)") {
-		t.Fatalf("current branch marker missing. frame=%q", last)
+	currentBadge := "  " + expectedTheme.Branch + "main" + resetColor + " " + expectedTheme.Badge + "(current branch)" + resetColor
+	if !strings.Contains(last, currentBadge) {
+		t.Fatalf("current branch marker missing or incorrect. frame=%q", last)
 	}
-	if !strings.Contains(output.String(), "j/k or ↑/↓ to move, Enter to checkout the selected branch, q to exit") {
+	if !strings.Contains(output.String(), expectedTheme.Help+"j/k or ↑/↓ to move, Enter to checkout the selected branch, q to exit"+resetColor) {
 		t.Fatalf("help message missing from output: %q", output.String())
 	}
 }
@@ -175,5 +179,38 @@ func TestSelectHandlesControlKeys(t *testing.T) {
 	}
 	if result.AlreadyOn {
 		t.Fatal("expected AlreadyOn to be false when quitting")
+	}
+}
+
+func TestThemeByName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		want     Theme
+		wantOkay bool
+	}{
+		{name: "empty uses default", input: "", want: DefaultTheme, wantOkay: true},
+		{name: "nord", input: "nord", want: ThemeNord, wantOkay: true},
+		{name: "catppuccin alias", input: "catppuccin-mocha", want: ThemeCatppuccin, wantOkay: true},
+		{name: "classic alias", input: "ANSI", want: ThemeClassic, wantOkay: true},
+		{name: "solarized alias", input: "Solarized-Dark", want: ThemeSolarized, wantOkay: true},
+		{name: "gruvbox", input: "gruvbox", want: ThemeGruvbox, wantOkay: true},
+		{name: "one dark alias", input: "one-dark", want: ThemeOneDark, wantOkay: true},
+		{name: "unknown", input: "rainbow", wantOkay: false},
+	}
+
+	for _, tt := range tests {
+		theme, ok := ThemeByName(tt.input)
+		if ok != tt.wantOkay {
+			t.Fatalf("%s: unexpected ok value. got %v, want %v", tt.name, ok, tt.wantOkay)
+		}
+		if !tt.wantOkay {
+			continue
+		}
+		if theme != tt.want {
+			t.Fatalf("%s: unexpected theme returned", tt.name)
+		}
 	}
 }

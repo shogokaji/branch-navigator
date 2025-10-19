@@ -99,6 +99,20 @@ func TestParseArgsHelp(t *testing.T) {
 	}
 }
 
+func TestParseArgsTheme(t *testing.T) {
+	t.Parallel()
+
+	usage := &bytes.Buffer{}
+	opts, err := parseArgs([]string{"--theme", "classic"}, usage, usage)
+	if err != nil {
+		t.Fatalf("parseArgs returned error: %v", err)
+	}
+
+	if opts.theme != "classic" {
+		t.Fatalf("expected theme classic, got %q", opts.theme)
+	}
+}
+
 func TestActionDetailsFor(t *testing.T) {
 	t.Parallel()
 
@@ -150,5 +164,53 @@ func TestActionDetailsFor(t *testing.T) {
 				t.Fatalf("actionDetailsFor(%q) = %#v, want %#v", tt.action, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveThemeDefault(t *testing.T) {
+	t.Setenv("BRANCH_NAVIGATOR_THEME", "")
+
+	got, err := resolveTheme("")
+	if err != nil {
+		t.Fatalf("resolveTheme returned error: %v", err)
+	}
+	if got != ui.DefaultTheme {
+		t.Fatalf("expected default theme, got %+v", got)
+	}
+}
+
+func TestResolveThemeFlag(t *testing.T) {
+	t.Parallel()
+
+	got, err := resolveTheme("catppuccin")
+	if err != nil {
+		t.Fatalf("resolveTheme returned error: %v", err)
+	}
+	if got != ui.ThemeCatppuccin {
+		t.Fatalf("expected catppuccin theme, got %+v", got)
+	}
+}
+
+func TestResolveThemeEnvFallback(t *testing.T) {
+	t.Setenv("BRANCH_NAVIGATOR_THEME", "Mocha")
+
+	got, err := resolveTheme("")
+	if err != nil {
+		t.Fatalf("resolveTheme returned error: %v", err)
+	}
+	if got != ui.ThemeCatppuccin {
+		t.Fatalf("expected catppuccin theme from env, got %+v", got)
+	}
+}
+
+func TestResolveThemeUnknown(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveTheme("unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown theme")
+	}
+	if !strings.Contains(err.Error(), "unknown theme") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
