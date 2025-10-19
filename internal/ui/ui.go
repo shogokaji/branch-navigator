@@ -11,9 +11,119 @@ import (
 )
 
 const clearScreen = "\033[2J\033[H"
-const highlightColor = "\033[32m"
-const resetColor = "\033[0m"
 const lineBreak = "\r\n"
+const resetColor = "\033[0m"
+
+// Theme captures the ANSI sequences applied to various UI elements.
+type Theme struct {
+	ActionLabel       string
+	ActionDescription string
+	Branch            string
+	Selected          string
+	SelectedBadge     string
+	Badge             string
+	Help              string
+}
+
+// ThemeNord implements the Nord-inspired palette.
+var ThemeNord = Theme{
+	ActionLabel:       "\033[1;38;5;116m",
+	ActionDescription: "\033[38;5;255m",
+	Branch:            "\033[38;5;249m",
+	Selected:          "\033[1;38;5;255;48;5;67m",
+	SelectedBadge:     "\033[1;38;5;108;48;5;67m",
+	Badge:             "\033[1;38;5;108m",
+	Help:              "\033[38;5;244m",
+}
+
+// ThemeCatppuccin implements the Catppuccin Mocha palette.
+var ThemeCatppuccin = Theme{
+	ActionLabel:       "\033[1;38;5;111m",
+	ActionDescription: "\033[38;5;189m",
+	Branch:            "\033[38;5;188m",
+	Selected:          "\033[1;38;5;234;48;5;111m",
+	SelectedBadge:     "\033[1;38;5;151;48;5;111m",
+	Badge:             "\033[1;38;5;151m",
+	Help:              "\033[38;5;246m",
+}
+
+// ThemeClassic provides an ANSI-friendly palette with broad terminal support.
+var ThemeClassic = Theme{
+	ActionLabel:       "\033[1;36m",
+	ActionDescription: "\033[37m",
+	Branch:            "\033[37m",
+	Selected:          "\033[1;97;44m",
+	SelectedBadge:     "\033[1;32;44m",
+	Badge:             "\033[1;32m",
+	Help:              "\033[90m",
+}
+
+// ThemeSolarized provides a Solarized Dark-inspired palette.
+var ThemeSolarized = Theme{
+	ActionLabel:       "\033[1;38;5;33m",
+	ActionDescription: "\033[38;5;230m",
+	Branch:            "\033[38;5;244m",
+	Selected:          "\033[1;38;5;230;48;5;23m",
+	SelectedBadge:     "\033[1;38;5;109;48;5;23m",
+	Badge:             "\033[1;38;5;109m",
+	Help:              "\033[38;5;243m",
+}
+
+// ThemeGruvbox provides a Gruvbox-inspired warm palette.
+var ThemeGruvbox = Theme{
+	ActionLabel:       "\033[1;38;5;208m",
+	ActionDescription: "\033[38;5;223m",
+	Branch:            "\033[38;5;250m",
+	Selected:          "\033[1;38;5;235;48;5;172m",
+	SelectedBadge:     "\033[1;38;5;114;48;5;172m",
+	Badge:             "\033[1;38;5;114m",
+	Help:              "\033[38;5;244m",
+}
+
+// ThemeOneDark provides a One Dark-inspired palette.
+var ThemeOneDark = Theme{
+	ActionLabel:       "\033[1;38;5;75m",
+	ActionDescription: "\033[38;5;253m",
+	Branch:            "\033[38;5;250m",
+	Selected:          "\033[1;38;5;233;48;5;68m",
+	SelectedBadge:     "\033[1;38;5;114;48;5;68m",
+	Badge:             "\033[1;38;5;114m",
+	Help:              "\033[38;5;246m",
+}
+
+// DefaultTheme holds the palette used when no explicit selection is provided.
+var DefaultTheme = ThemeCatppuccin
+
+var themeNames = []string{"catppuccin", "nord", "classic", "solarized", "gruvbox", "onedark"}
+
+// AvailableThemeNames returns the canonical list of supported themes.
+func AvailableThemeNames() []string {
+	names := make([]string, len(themeNames))
+	copy(names, themeNames)
+	return names
+}
+
+// ThemeByName resolves a theme by its human-readable name.
+func ThemeByName(name string) (Theme, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "":
+		return DefaultTheme, true
+	case "nord":
+		return ThemeNord, true
+	case "catppuccin", "catppuccin-mocha", "mocha":
+		return ThemeCatppuccin, true
+	case "classic", "ansi":
+		return ThemeClassic, true
+	case "solarized", "solarized-dark":
+		return ThemeSolarized, true
+	case "gruvbox":
+		return ThemeGruvbox, true
+	case "onedark", "one-dark":
+		return ThemeOneDark, true
+	default:
+		return Theme{}, false
+	}
+}
 
 // ActionDetails captures the labels describing the currently configured operation.
 type ActionDetails struct {
@@ -40,11 +150,20 @@ type UI struct {
 	in     io.Reader
 	out    io.Writer
 	action ActionDetails
+	theme  Theme
 }
 
 // New constructs a UI bound to the given input and output streams.
 func New(input io.Reader, output io.Writer, action ActionDetails) *UI {
-	return &UI{in: input, out: output, action: action}
+	return NewWithTheme(input, output, action, DefaultTheme)
+}
+
+// NewWithTheme constructs a UI configured with the provided theme.
+func NewWithTheme(input io.Reader, output io.Writer, action ActionDetails, theme Theme) *UI {
+	if theme == (Theme{}) {
+		theme = DefaultTheme
+	}
+	return &UI{in: input, out: output, action: action, theme: theme}
 }
 
 // Select renders the branch list and processes key events until completion.
@@ -168,15 +287,20 @@ func (u *UI) render(branches []Branch, selected int) error {
 		return err
 	}
 
+	theme := u.theme
+	if theme == (Theme{}) {
+		theme = DefaultTheme
+	}
+
 	headerPrinted := false
 	if name := strings.TrimSpace(u.action.Name); name != "" {
-		if _, err := fmt.Fprintf(u.out, "Action: %s%s", name, lineBreak); err != nil {
+		if _, err := fmt.Fprintf(u.out, "%sAction: %s%s%s", theme.ActionLabel, name, resetColor, lineBreak); err != nil {
 			return err
 		}
 		headerPrinted = true
 	}
 	if description := strings.TrimSpace(u.action.Description); description != "" {
-		if _, err := fmt.Fprintf(u.out, "%s%s", description, lineBreak); err != nil {
+		if _, err := fmt.Fprintf(u.out, "%s%s%s%s", theme.ActionDescription, description, resetColor, lineBreak); err != nil {
 			return err
 		}
 		headerPrinted = true
@@ -186,22 +310,31 @@ func (u *UI) render(branches []Branch, selected int) error {
 			return err
 		}
 	}
-	if _, err := fmt.Fprint(u.out, "Select a branch:"+lineBreak); err != nil {
+	if _, err := fmt.Fprintf(u.out, "%sSelect a branch:%s%s", theme.Branch, resetColor, lineBreak); err != nil {
 		return err
 	}
 	for i, branch := range branches {
-		line := branch.Name
-		if branch.Current {
-			line += " (current branch)"
-		}
 		if i == selected {
-			if _, err := fmt.Fprintf(u.out, "> %s%s%s%s", highlightColor, line, resetColor, lineBreak); err != nil {
+			if branch.Current {
+				if _, err := fmt.Fprintf(u.out, "%s> %s %s(current branch)%s%s", theme.Selected, branch.Name, theme.SelectedBadge, resetColor, lineBreak); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(u.out, "%s> %s%s%s", theme.Selected, branch.Name, resetColor, lineBreak); err != nil {
 				return err
 			}
-		} else {
-			if _, err := fmt.Fprintf(u.out, "  %s%s", line, lineBreak); err != nil {
+			continue
+		}
+
+		if branch.Current {
+			if _, err := fmt.Fprintf(u.out, "  %s%s%s %s(current branch)%s%s", theme.Branch, branch.Name, resetColor, theme.Badge, resetColor, lineBreak); err != nil {
 				return err
 			}
+			continue
+		}
+		if _, err := fmt.Fprintf(u.out, "  %s%s%s%s", theme.Branch, branch.Name, resetColor, lineBreak); err != nil {
+			return err
 		}
 	}
 	if _, err := fmt.Fprint(u.out, lineBreak); err != nil {
@@ -211,7 +344,7 @@ func (u *UI) render(branches []Branch, selected int) error {
 	if enterLabel == "" {
 		enterLabel = "select"
 	}
-	if _, err := fmt.Fprintf(u.out, "j/k or ↑/↓ to move, Enter to %s, q to exit%s", enterLabel, lineBreak); err != nil {
+	if _, err := fmt.Fprintf(u.out, "%sj/k or ↑/↓ to move, Enter to %s, q to exit%s%s", theme.Help, enterLabel, resetColor, lineBreak); err != nil {
 		return err
 	}
 	return nil
