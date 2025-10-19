@@ -3,7 +3,11 @@ package git
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -334,5 +338,49 @@ func TestClientDeleteBranch(t *testing.T) {
 				t.Fatalf("not all git calls were consumed: %d of %d", runner.index, len(runner.calls))
 			}
 		})
+	}
+}
+
+func TestCLIRunWithCombinedOutputForcesColor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script test is not supported on Windows")
+	}
+
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "git_args")
+
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "$BN_ARGS_PATH"
+printf 'done\n'
+`
+	path := filepath.Join(dir, "git")
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatalf("failed to create mock git: %v", err)
+	}
+
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("BN_ARGS_PATH", argsFile)
+
+	cli := &CLI{}
+	ctx := context.Background()
+	stdout, stderr, err := cli.RunWithCombinedOutput(ctx, "status")
+	if err != nil {
+		t.Fatalf("RunWithCombinedOutput returned error: %v", err)
+	}
+	if stdout != "done" {
+		t.Fatalf("unexpected stdout: got %q, want %q", stdout, "done")
+	}
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: got %q, want empty", stderr)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("failed to read args file: %v", err)
+	}
+	args := strings.Split(strings.TrimSpace(string(data)), "\n")
+	want := []string{"-c", "color.ui=always", "status"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("unexpected git args: got %v, want %v", args, want)
 	}
 }

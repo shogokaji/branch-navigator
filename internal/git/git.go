@@ -35,7 +35,8 @@ func (c *CLI) Run(ctx context.Context, args ...string) (string, error) {
 
 // RunWithCombinedOutput invokes git and returns trimmed stdout and stderr strings.
 func (c *CLI) RunWithCombinedOutput(ctx context.Context, args ...string) (string, string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmdArgs := append([]string{"-c", "color.ui=always"}, args...)
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
