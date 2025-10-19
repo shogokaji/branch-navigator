@@ -5,7 +5,7 @@ branch-navigator is an interactive Git helper written in Go 1.22+ that keeps you
 
 ## Features
 - Shows the current branch plus a deduplicated list of recent local branches pulled from `git reflog`, with a commit-date fallback when the reflog runs dry.
-- Keyboard-first navigation: `j`/`k` or arrow keys move, `Enter` triggers the action, `q`/`Ctrl+C` exits. The highlighted row is prefixed with `>` and rendered in green, and `(current branch)` marks the branch you are already on.
+- Keyboard-first navigation: `j`/`k` or arrow keys move, `Enter` triggers the action, `q`/`Ctrl+C` exits. The highlighted row is prefixed with `>` and styled using the active color theme, and `(current branch)` marks the branch you are already on.
 - One binary, three actions: checkout (default), merge, or safe delete. Unmerged deletes prompt before retrying with force, and git exit codes propagate untouched.
 - Thin wrapper around your local git: no daemons, no shell hooks, just standard output so you can read git's messages directly.
 
@@ -42,6 +42,7 @@ Options:
   -d	delete the selected local branch
   -n	maximum number of branches to list (default 10)
       --limit N	alias for -n
+      --theme NAME	color theme (catppuccin, nord, classic, solarized, gruvbox, onedark; default catppuccin)
   -h	show this help message
 ```
 
@@ -50,9 +51,13 @@ Action flags choose what happens when you press `Enter`:
 - `-m` merges the highlighted branch into the current branch. Git's stdout/stderr and exit code are passed through so you can resolve conflicts immediately.
 - `-d` deletes the highlighted local branch. If the branch is not fully merged, you'll be prompted before retrying with `git branch -D`. Attempts to delete the current branch are rejected.
 - `-n` / `--limit` controls how many branches are listed (default `10`).
+- `--theme` picks a color theme for this run. Valid values are `catppuccin`, `nord`, `classic`, `solarized`, `gruvbox`, and `onedark`. Leave it unspecified to use the theme from the `BRANCH_NAVIGATOR_THEME` environment variable, or Catppuccin when the variable is empty.
 - `-h` prints help and exits.
 
 The UI runs in raw mode when connected to a TTY so single keystrokes take effect instantly. Arrow keys, `j`, and `k` move the selection; `q`, `Ctrl+C`, `Ctrl+D`, `Ctrl+Z`, or EOF exit without changes.
+
+### Color themes
+The interactive UI ships with several ANSI-friendly themes tuned for popular terminal palettes. Catppuccin is the default, but you can override it per-run with `--theme` or globally via the `BRANCH_NAVIGATOR_THEME` environment variable (for example `export BRANCH_NAVIGATOR_THEME=gruvbox`). Theme names are case-insensitive and include aliases such as `catppuccin-mocha`, `solarized-dark`, and `one-dark`. When an unknown theme is requested the CLI exits with a clear error so you can fall back to a supported name.
 
 ### How branches are chosen
 1. Read the HEAD reflog (`git reflog --format=%gs`) to collect branch switch entries.
